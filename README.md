@@ -220,7 +220,7 @@ curl -k -v -u root --request POST https://192.168.0.120/redfish/v1/Systems/Syste
 
 3) *Use [the exploit](exploits/CVE-2018-1207.py) to get a proper shell on the iDRAC running version 2.50. Prior to running the script, make sure that the SH4 cross compiler is installed and working (`apt install gcc-sh4-linux-gnu`) and start e.g., a netcat listener. We have updated the original exploit to support Python 3 and recent GCC package names.*
 
-4) The embedded payload's shell is garbage, some commands like writecfg do not work at all for some reason, *and it will consume all available file descriptors on the iDRAC pretty fast*, so the next step is to alter `/etc/passwd` and `/etc/shadow` to access the root sheel reliably via ssh:
+4) The embedded payload's shell has been improved a bit from the original exploit, but if we want reliable access the next step is to alter `/etc/passwd` and `/etc/shadow` to access the root shell directly via ssh:
 
 ```
 cd /tmp
@@ -234,9 +234,7 @@ cat 112 > /etc/shadow
 
 Test it by sshing to `root@192.168.0.120`, using default password `calvin`, executing `su`, entering `user1234`.
 
-6) *We recommend rebooting the iDRAC here once root access has been confirmed, as the exploit's payload will be forking a bunch of stuff continuously in the background until you reap its process.*
-
-7) *Copy the provided [ThermalConfig.txt](/persmod/ThermalConfig.txt) and [platcfgfld.txt](/persmod/platcfgfld.txt) files to the `/flash/data0/persmod/` directory, then reboot the iDRAC by issuing e.g., `racadm racreset`. If the `persmod` directory does not exist, simply create it with `mkdir /flash/data0/persmod/`.*
+5) *Copy the provided [ThermalConfig.txt](/persmod/ThermalConfig.txt) and [platcfgfld.txt](/persmod/platcfgfld.txt) files to the `/flash/data0/persmod/` directory, then reboot the iDRAC by issuing e.g., `racadm racreset`. If the `persmod` directory does not exist, simply create it with `mkdir /flash/data0/persmod/`.*
 
 *Once the iDRAC has rebooted, you can verify that the fix has been applied by looking at the early logs from the iDRAC, or simply that the correct symlinks have been automatically created on startup:*
 
@@ -252,7 +250,7 @@ cat /tmp/setup-flash.log | grep -i "identity module"
 Thermal Config from Identity Module Installed
 ```
 
-8) Now boot the system up. Prior to boot turn iDRAC debugs on:
+6) Now boot the system up. Prior to boot turn iDRAC debugs on:
 
 ```
 debugcontrol -l 10
@@ -288,7 +286,7 @@ This is bad:
     Nov 16 14:26:18 idrac-FFDCWL2 L4, S55 [1075]: GetGPGPUPwr: End of table reached (Entry 92). Didn't find a power table match for device
 ```
 
-9) Install Ubuntu 20.04 (`ubuntu-20.04.3-live-server-amd64.iso`), install `build-essential`, manually blacklist nouveau driver:
+7) Install Ubuntu 20.04 (`ubuntu-20.04.3-live-server-amd64.iso`), install `build-essential`, manually blacklist nouveau driver:
 
 ```
 vi /etc/modprobe.d/blacklist-nouveau.conf
@@ -300,11 +298,11 @@ sudo update-initramfs -u
 reboot
 ```
 
-10) Download and install the Nvidia data center driver 470.82.01 (download and install `nvidia-driver-local-repo-ubuntu2004-470.82.01_1.0-1_amd64.deb`; add the key, then do `sudo apt-get install cuda-drivers`)
+8) Download and install the Nvidia data center driver 470.82.01 (download and install `nvidia-driver-local-repo-ubuntu2004-470.82.01_1.0-1_amd64.deb`; add the key, then do `sudo apt-get install cuda-drivers`)
 
-11) Reboot the system and enjoy the lack of HW Power Brake Slowdown in `nvidia-smi -q` output.
+9) Reboot the system and enjoy the lack of HW Power Brake Slowdown in `nvidia-smi -q` output.
 
-12) *Success.*
+10) *Success.*
 
 
 [^1]: I'm not aware of the exact mechanism how iDRAC signals throttling to a GPU. The 12v rail readings are normal in that state. Most likely, iDRAC sets or resets some specific bit in the CPLD memory. [The CPLD (implemented on Altera FPGA) seems to function as a large GPIO device](https://www.sstic.org/media/SSTIC2019/SSTIC-actes/iDRACKAR/SSTIC2019-Article-iDRACKAR-iooss.pdf). It may in turn assert a signal on interface between main board and SXM2 FRU. Alternativey, it's possible that iDRAC signals something to the PLX PCIe switch, or other logic on the FRU board and it results in GPU power brake state. It is unlikely that iDRAC communicates directly with GPUs via interface such as SMBPBI (SMBus Post Box Interface). It is also not clear how exactly the power brake state gets asserted. It seems that specific PCIe pin (PWR_BRAKE_N) is responsible for this action. Likely the end point for this signal is some PIN on a MEG-Array SXM2 mezzanine connector. The SXM2 pinout wasn't disclosed by NVIDIA and I was unable to find it. The only relevant document I was able to find is [Advanced Accelerator Adapter Electro-Mechanical Specification by Open POWER foundation](http://cdn.openpowerfoundation.org/wp-content/uploads/resources/25Gbps-spec-1.0/25Gbps-spec-20171108.pdf). I'm not sure whether NVLINK 2.0 and OpenCAPI 3.0 are somehow pin compatible, at least for power and PCIe lines. If that so, the PWR_BRAKE_N is the pin E18 on the right SXM2 Meg-Array. Maybe plastering some Kapton paper over this pin could help to avoid throttling. Maybe the Nvidia BIOS checks the state of the pin and would throttle the GPU anyway if the pin is in <i>mu</i> state. Would be nice if someone could find out.
